@@ -113,7 +113,20 @@ class ModbusSingleRequestHandler(ModbusBaseRequestHandler):
         """
         while self.running:
             try:
-                data = self.request.recv(1024)
+                # optimize receive for ModbusRtu
+                if isinstance(self.framer, ModbusRtuFramer):
+                    # request ADU packets for function codes 1-6 are 8 bytes long so receive at least that
+                    data = self.request.recv(8)
+                    if data:
+                        # byte index 1 is the function code
+                        function_code = int(data[1])
+                        # function code 15 and 16 are 9 + data_length long
+                        if function_code in [15, 16]:
+                            data_length = int(data[6])
+                            # since 8 bytes were received already the remaining bytes are data_length + 9 - 8
+                            data += self.request.recv(data_length + 1)
+                else:
+                    data = self.request.recv(1024)
                 if data:
                     units = self.server.context.slaves()
                     if not isinstance(units, (list, tuple)):
